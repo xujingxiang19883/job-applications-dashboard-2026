@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="A personal tracker for verified 2026 internship applications." />
+    <title>Application Dashboard · 2026</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23172a45'/%3E%3Cpath d='M17 45V19h9l6 13 6-13h9v26h-8V31l-7 14-7-14v14z' fill='%236fd3c2'/%3E%3C/svg%3E" />
+    <style>
+      :root { --navy:#12233c; --ink:#19253a; --muted:#68758a; --line:#dbe3ed; --paper:#f5f7fb; --aqua:#0d8f82; --gold:#b47712; --rose:#b53f4d; --shadow:0 12px 35px rgba(19,35,60,.08); }
+      * { box-sizing:border-box; }
+      body { margin:0; color:var(--ink); background:var(--paper); font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size:16px; line-height:1.45; }
+      .shell { max-width:1440px; margin:0 auto; padding:32px 24px 48px; }
+      .masthead { display:flex; justify-content:space-between; gap:24px; align-items:flex-end; padding:12px 4px 26px; }
+      h1 { margin:0; color:var(--navy); font-size:clamp(1.7rem,3vw,2.45rem); letter-spacing:-.04em; line-height:1.08; }
+      .eyebrow { margin:0 0 7px; color:var(--aqua); font-weight:750; font-size:.78rem; letter-spacing:.11em; text-transform:uppercase; }
+      .subtitle { max-width:690px; margin:10px 0 0; color:var(--muted); }
+      .save-note { max-width:330px; color:var(--muted); font-size:.86rem; text-align:right; }
+      .save-note strong { color:var(--aqua); }
+      .metrics { display:grid; grid-template-columns:repeat(7,minmax(115px,1fr)); gap:12px; margin-bottom:18px; }
+      .metric { min-height:92px; padding:16px; border:1px solid var(--line); border-radius:13px; background:#fff; box-shadow:var(--shadow); }
+      .metric .label { color:var(--muted); font-size:.76rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+      .metric .value { display:block; margin-top:6px; color:var(--navy); font-size:1.65rem; font-weight:760; letter-spacing:-.04em; }
+      .panel { overflow:hidden; border:1px solid var(--line); border-radius:16px; background:#fff; box-shadow:var(--shadow); }
+      .toolbar { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line); }
+      .toolbar p { margin:0; color:var(--muted); font-size:.9rem; }
+      button { border:1px solid #b8c5d5; border-radius:8px; padding:8px 11px; color:var(--navy); background:#fff; font:inherit; font-size:.85rem; font-weight:700; cursor:pointer; }
+      button:hover { border-color:var(--aqua); color:var(--aqua); }
+      .table-wrap { overflow-x:auto; }
+      table { width:100%; min-width:1100px; border-collapse:collapse; }
+      th { padding:12px 16px; color:#506079; background:#f7f9fc; border-bottom:1px solid var(--line); text-align:left; font-size:.73rem; letter-spacing:.07em; text-transform:uppercase; white-space:nowrap; }
+      td { padding:14px 16px; border-bottom:1px solid #e8edf3; vertical-align:top; }
+      tbody tr:last-child td { border-bottom:0; }
+      tbody tr:hover { background:#fbfcfe; }
+      .company { color:var(--navy); font-weight:760; }
+      .role { max-width:375px; color:#344057; }
+      .date { white-space:nowrap; color:#4d5c72; font-variant-numeric:tabular-nums; }
+      .link { display:inline-flex; align-items:center; gap:4px; color:#0b6d8a; font-weight:700; font-size:.88rem; text-decoration:none; white-space:nowrap; }
+      .link:hover { text-decoration:underline; }
+      .missing { color:#8994a6; font-size:.87rem; }
+      select { min-width:173px; border:1px solid #cbd5e1; border-radius:8px; padding:7px 28px 7px 9px; color:var(--navy); background:#fff; font:inherit; font-size:.87rem; font-weight:700; cursor:pointer; }
+      select.status-rejected { border-color:#f2b8bd; color:#9f2935; background:#fff7f7; }
+      select.status-oa { border-color:#efd49c; color:#8a5a00; background:#fffaf0; }
+      select.status-received { border-color:#a9ded6; color:#08756b; background:#f2fcfa; }
+      select.status-progress { border-color:#b9c8f1; color:#3455a0; background:#f5f7ff; }
+      .footer { display:flex; justify-content:space-between; gap:20px; margin:18px 4px 0; color:var(--muted); font-size:.82rem; }
+      @media (max-width:900px) { .metrics { grid-template-columns:repeat(3,1fr); } .masthead { align-items:flex-start; flex-direction:column; } .save-note { text-align:left; } }
+      @media (max-width:560px) { .shell { padding:22px 14px 32px; } .metrics { grid-template-columns:repeat(2,1fr); } .toolbar { align-items:flex-start; flex-direction:column; } .metric { min-height:80px; } }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">Verified applications · 2026</p>
+          <h1>Job application dashboard</h1>
+          <p class="subtitle">Chronological record of submitted applications and employer updates. Use the Current status menu to keep your own browser view up to date.</p>
+        </div>
+        <div class="save-note" id="save-note">Edits are saved <strong>only in this browser</strong> and can be reset below.</div>
+      </header>
+
+      <section class="metrics" aria-label="Application summary">
+        <div class="metric"><span class="label">Total</span><span class="value" id="metric-total">0</span></div>
+        <div class="metric"><span class="label">Submitted</span><span class="value" id="metric-submitted">0</span></div>
+        <div class="metric"><span class="label">Reviewing</span><span class="value" id="metric-reviewing">0</span></div>
+        <div class="metric"><span class="label">OA received</span><span class="value" id="metric-oa">0</span></div>
+        <div class="metric"><span class="label">OA outstanding</span><span class="value" id="metric-oa-outstanding">0</span></div>
+        <div class="metric"><span class="label">Rejected</span><span class="value" id="metric-rejected">0</span></div>
+        <div class="metric"><span class="label">In progress</span><span class="value" id="metric-progress">0</span></div>
+      </section>
+
+      <section class="panel" aria-labelledby="tracker-title">
+        <div class="toolbar">
+          <p id="tracker-title">Sorted by submitted date, earliest first. “Not captured” means no role-specific PDF was retained.</p>
+          <button type="button" id="reset-statuses">Reset browser edits</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Submitted</th><th>Company</th><th>Role</th><th>Current status</th><th>Application / JD</th><th>Resume PDF</th></tr></thead>
+            <tbody id="application-rows"></tbody>
+          </table>
+        </div>
+      </section>
+      <footer class="footer"><span>Default statuses reflect the latest verified record.</span><span>Last compiled: 2026-09-24</span></footer>
+    </main>
+    <script>
+      const applications = [
+        {id:'millennium-qr',date:'2026-08-29',company:'Millennium Management',role:'2027 Quantitative Researcher Intern, New York',status:'Rejected',url:'https://campusjobs.mlp.com/careers/job/755957778843-2027-quantitative-researcher-intern-new-york-new-york-new-york-united-states-of-america?domain=mlp.com',resume:null},
+        {id:'millennium-qd',date:'2026-09-02',company:'Millennium Management',role:'2027 Quantitative Developer Intern, New York',status:'Rejected',url:'https://campusjobs.mlp.com/careers/job/755957819661-2027-quantitative-developer-intern-new-york-new-york-new-york-united-states-of-america?domain=mlp.com',resume:null},
+        {id:'deshaw',date:'2026-09-07',company:'D. E. Shaw',role:'Quantitative Analyst Intern, New York, Summer 2027',status:'Rejected',url:'https://www.deshaw.com/careers/quantitative-analyst-intern-new-york-summer-2027-5890',resume:'Xu.Jingxiang.DE_Shaw_Quantitative_Analyst_Intern.pdf'},
+        {id:'jane',date:'2026-09-08',company:'Jane Street',role:'Role not specified in employer email',status:'Rejected',url:'https://www.janestreet.com/join-jane-street/position/8498547002/',resume:'Xu.Jingxiang.Jane_Street_Quantitative_Researcher_Intern.pdf'},
+        {id:'susquehanna-qr',date:'2026-09-09',company:'Susquehanna',role:'Quantitative Research position',status:'OA received',url:'https://careers.sig.com/jobs/10820?lang=en-us',resume:'Xu.Jingxiang.Susquehanna_Quantitative_Research_Intern.pdf'},
+        {id:'susquehanna-st',date:'2026-09-09',company:'Susquehanna',role:'Quantitative Systematic Trading position',status:'OA received',url:'https://careers.sig.com/jobs/10820?lang=en-us',resume:null},
+        {id:'arrowstreet',date:'2026-09-14',company:'Arrowstreet Capital',role:'Quantitative Developer Intern, Summer 2027 (R1506)',status:'In Progress',url:'https://arrowstreetcapital.wd5.myworkdayjobs.com/en-US/Campus_Careers/job/Quantitative-Developer-Intern--Summer-2027_R1506',resume:'Xu.Jingxiang.Arrowstreet_Quant_Developer_Intern.pdf'},
+        {id:'applied-academics',date:'2026-09-14',company:'Applied Academics LLC',role:'Quantitative Analyst Intern',status:'Submitted',url:'https://cornell.joinhandshake.com/job-search/11412195',resume:'Xu.Jingxiang.Applied_Academics_Analyst_Intern_JD.pdf'},
+        {id:'imc',date:'2026-09-14',company:'IMC Trading',role:'Quantitative Trader Intern, Summer 2027',status:'OA received',url:'https://www.imc.com/us/careers/jobs/4823923101/apply',resume:'Xu.Jingxiang.IMC_Trader_Intern_JD.pdf'},
+        {id:'balbec-handshake',date:'2026-09-14',company:'Balbec Capital LP',role:'2027 Quantitative Summer Analyst',status:'Submitted',url:'https://cornell.joinhandshake.com/job-search/11364830',resume:'Xu.Jingxiang.Balbec_Summer_Analyst_JD.pdf'},
+        {id:'walleye',date:'2026-09-14',company:'Walleye Capital',role:'Quantitative Developer Intern, Summer 2027',status:'Received / under review',url:'https://job-boards.greenhouse.io/walleyecapital-external-students/jobs/4679168006',resume:'Xu.Jingxiang.Walleye_Quantic_Developer_Intern.pdf'},
+        {id:'seven',date:'2026-09-14',company:'Seven Research',role:'Quantitative Researcher Intern',status:'Received',url:'https://job-boards.greenhouse.io/sevenresearch/jobs/4894946008',resume:'Xu.Jingxiang.Seven_Research_Quant_Researcher_Intern.pdf'},
+        {id:'bofa',date:'2026-09-14',company:'Bank of America',role:'Global Quantitative Research Summer Associate Program, 2027',status:'OA outstanding',url:'https://bankcampuscareers.tal.net/vx/brand-4/spa-1/candidate/so/pm/1/pl/1/opp/14896-Global-Quantitative-Research-Summer-Associate-Program-2027/en-GB',resume:'Xu.Jingxiang.BofA_Global_Quant_Research_2027.pdf'},
+        {id:'ridgeline',date:'2026-09-18',company:'Ridgeline',role:'Software Engineer Intern, Summer 2027 (Cornell)',status:'Received / under review',url:'https://job-boards.greenhouse.io/ridgeline-early-careers/jobs/7990768003',resume:null},
+        {id:'fidelity-mas',date:'2026-09-22',company:'Fidelity Investments',role:'Quantitative Research Intern, Multi-Asset Systematic Research Team',status:'Rejected',url:'https://wd1.myworkdaysite.com/recruiting/fmr/targeted/job/200-Seaport-Blvd-Boston-MA/Quantitative-Research-Intern--Multi-Asset-Systematic-Research-Team_2135128',resume:'Xu.Jingxiang.Fidelity_Multi_Asset_Systematic_Research_2027.pdf'},
+        {id:'fidelity-fi',date:'2026-09-22',company:'Fidelity Investments',role:'Quantitative Research Intern, Fixed Income Team',status:'Rejected',url:'https://wd1.myworkdaysite.com/recruiting/fmr/targeted/job/200-Seaport-Blvd-Boston-MA/Quantitative-Research-Intern--Fixed-Income-Team_2135109',resume:'Xu.Jingxiang.Fidelity_Fixed_Income_Quantitative_Research_2027.pdf'},
+        {id:'barclays',date:'2026-09-23',company:'Barclays',role:'Quantitative Finance Associate Summer Internship Program, 2027 (New York)',status:'OA received',url:'https://barclays.wd3.myworkdayjobs.com/External_Career_Site_Barclays/job/New-York-745-7th-Avenue/Quantitative-Finance-Associate-Summer-Internship-Program-2027-New-York_JR-0000128099',resume:'Xu.Jingxiang.Barclays_Quantitative_Analytics_2027.pdf'},
+        {id:'balbec-direct',date:'2026-09-24',company:'Balbec Capital LP',role:'2027 Quantitative Summer Analyst',status:'Application received / reviewing',url:'https://balbec.extensishrtalent.com/careers/JobDetail?v2enc=EqwuWGHwdzj5mAATPH9Hp4pmFLQw6N0zbPLxXzon4w8=',resume:'Xu.Jingxiang.Balbec_Quantitative_Summer_Analyst.pdf'}
+      ].sort((a,b) => a.date.localeCompare(b.date) || a.company.localeCompare(b.company));
+
+      const statusChoices = ['Submitted','Received','Received / under review','Application received / reviewing','OA received','OA outstanding','Rejected','In Progress'];
+      const saved = JSON.parse(localStorage.getItem('application-dashboard-statuses') || '{}');
+      const rows = document.getElementById('application-rows');
+      const escapeHtml = text => String(text).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+      const classFor = status => status === 'Rejected' ? 'status-rejected' : status.startsWith('OA') ? 'status-oa' : status.includes('Received') || status.includes('reviewing') ? 'status-received' : status === 'In Progress' ? 'status-progress' : '';
+      const render = () => {
+        rows.innerHTML = applications.map(app => {
+          const current = saved[app.id] || app.status;
+          const options = statusChoices.map(status => `<option value="${escapeHtml(status)}" ${status === current ? 'selected' : ''}>${escapeHtml(status)}</option>`).join('');
+          const posting = app.url ? `<a class="link" href="${escapeHtml(app.url)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>` : '<span class="missing">Not captured</span>';
+          const resume = app.resume ? `<a class="link" href="resumes/${encodeURIComponent(app.resume)}" target="_blank" rel="noopener noreferrer">Open PDF ↗</a>` : '<span class="missing">Not captured</span>';
+          return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td><select class="${classFor(current)}" data-id="${app.id}" aria-label="Current status for ${escapeHtml(app.company)}">${options}</select></td><td>${posting}</td><td>${resume}</td></tr>`;
+        }).join('');
+        rows.querySelectorAll('select').forEach(select => select.addEventListener('change', event => {
+          saved[event.target.dataset.id] = event.target.value;
+          localStorage.setItem('application-dashboard-statuses', JSON.stringify(saved));
+          document.getElementById('save-note').innerHTML = 'Saved in <strong>this browser</strong>.';
+          render(); updateMetrics();
+        }));
+      };
+      const updateMetrics = () => {
+        const statuses = applications.map(app => saved[app.id] || app.status);
+        const count = predicate => statuses.filter(predicate).length;
+        document.getElementById('metric-total').textContent = statuses.length;
+        document.getElementById('metric-submitted').textContent = count(status => status === 'Submitted');
+        document.getElementById('metric-reviewing').textContent = count(status => status === 'Received' || status === 'Received / under review' || status === 'Application received / reviewing');
+        document.getElementById('metric-oa').textContent = count(status => status === 'OA received');
+        document.getElementById('metric-oa-outstanding').textContent = count(status => status === 'OA outstanding');
+        document.getElementById('metric-rejected').textContent = count(status => status === 'Rejected');
+        document.getElementById('metric-progress').textContent = count(status => status === 'In Progress');
+      };
+      document.getElementById('reset-statuses').addEventListener('click', () => {
+        localStorage.removeItem('application-dashboard-statuses');
+        Object.keys(saved).forEach(key => delete saved[key]);
+        document.getElementById('save-note').innerHTML = 'Browser edits reset to <strong>published defaults</strong>.';
+        render(); updateMetrics();
+      });
+      render(); updateMetrics();
+    </script>
+  </body>
+</html>

@@ -158,6 +158,9 @@
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpudnd0d2t2aXN5cWx4a29pZmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MTQ0MDQsImV4cCI6MjEwNTk5MDQwNH0.MpBGnfENO_PZunZaUyMytSfGorJ278vA5JHoCxS2IXA'
       );
       const remoteStatuses = {};
+      const remoteFollowups = {};
+      const remoteFollowupKeys = {};
+      const FOLLOWUP_PREFIX = '__oa_followup__:';
       const customApplications = [];
       const dashboardMetadata = { followups: {}, resumes: {} };
       const metadataPath = 'metadata/dashboard.json';
@@ -198,6 +201,14 @@
       const currentStatus = app => statusChoices.includes(remoteStatuses[app.id]) ? remoteStatuses[app.id] : normalizeStatus(app.status);
       const classFor = status => status === 'Rejected' ? 'status-rejected' : status === 'OA Received' ? 'status-oa' : status === 'Interview Received' ? 'status-interview' : 'status-submitted';
       const followupLabel = followup => followup.note || (followup.done ? 'Done' : followup.due ? `Due ${new Date(`${followup.due}T00:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })}` : '');
+      const followupKey = (applicationId, note) => `${FOLLOWUP_PREFIX}${encodeURIComponent(applicationId)}:${encodeURIComponent(note)}`;
+      const parseFollowupKey = key => {
+        const rest = key.slice(FOLLOWUP_PREFIX.length);
+        const separator = rest.indexOf(':');
+        if (separator === -1) return null;
+        try { return { applicationId: decodeURIComponent(rest.slice(0, separator)), note: decodeURIComponent(rest.slice(separator + 1)) }; }
+        catch (_) { return null; }
+      };
       const updateAuthUi = () => {
         const owner = isOwner();
         authEmail.hidden = owner;
@@ -232,7 +243,7 @@
             : isOwner()
               ? `<button type="button" class="upload-missing" data-id="${app.id}">Upload PDF</button><input class="resume-upload" data-id="${app.id}" type="file" accept="application/pdf,.pdf" hidden />`
               : '<span class="missing">Not captured</span>';
-          const followup = dashboardMetadata.followups[app.id] || {};
+          const followup = { note: remoteFollowups[app.id] || '' };
           const statusControl = current === 'OA Received'
             ? `<div class="status-cell"><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /><div class="oa-followup">${isOwner() ? `<input class="followup-note" data-id="${app.id}" type="text" value="${escapeHtml(followupLabel(followup))}" placeholder="Done or Due 06/09" aria-label="OA follow-up for ${escapeHtml(app.company)}" />` : `<span class="followup-readonly">${escapeHtml(followupLabel(followup)) || 'Pending'}</span>`}</div></div>`
             : `<input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} />`;
@@ -274,7 +285,17 @@
           saveNote.innerHTML = 'Status storage is temporarily <strong>unavailable</strong>.';
           return;
         }
-        data.forEach(item => { remoteStatuses[item.application_id] = item.status; });
+        data.forEach(item => {
+          if (item.application_id.startsWith(FOLLOWUP_PREFIX)) {
+            const parsed = parseFollowupKey(item.application_id);
+            if (parsed) {
+              remoteFollowups[parsed.applicationId] = parsed.note;
+              remoteFollowupKeys[parsed.applicationId] = item.application_id;
+            }
+            return;
+          }
+          remoteStatuses[item.application_id] = item.status;
+        });
         render(); updateMetrics();
       };
       const publicResumeUrl = path => path ? supabaseClient.storage.from('dashboard-resumes').getPublicUrl(path).data.publicUrl : null;
@@ -297,11 +318,18 @@
         if (error) throw error;
       };
       const saveFollowup = async (applicationId, followup) => {
-        dashboardMetadata.followups[applicationId] = followup;
         saveNote.innerHTML = 'Saving <strong>OA follow-up</strong>…';
+        const previousKey = remoteFollowupKeys[applicationId];
+        const nextKey = followupKey(applicationId, followup.note);
         try {
-          await saveDashboardMetadata();
-          saveNote.innerHTML = 'OA follow-up saved <strong>permanently</strong>.';
+          const request = previousKey
+            ? supabaseClient.from('application_statuses').update({ application_id: nextKey, status: 'OA Received' }).eq('application_id', previousKey)
+            : supabaseClient.from('application_statuses').insert({ application_id: nextKey, status: 'OA Received' });
+          const { error } = await request;
+          if (error) throw error;
+          remoteFollowups[applicationId] = followup.note;
+          remoteFollowupKeys[applicationId] = nextKey;
+          saveNote.innerHTML = 'OA follow-up saved <strong>in the database</strong>.';
           render();
         } catch (_) {
           saveNote.innerHTML = 'Could not save the OA follow-up. Please <strong>sign in again</strong>.';

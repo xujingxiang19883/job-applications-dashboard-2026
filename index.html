@@ -62,7 +62,7 @@
       .status-cell { display:grid; grid-template-columns:minmax(156px,1fr) minmax(150px,1fr); gap:7px; min-width:320px; }
       .status-cell .status-editor { min-width:0; width:100%; }
       .oa-followup { display:flex; align-items:center; gap:7px; min-height:35px; padding:5px 7px; border:1px solid #efd49c; border-radius:8px; background:#fffaf0; color:#765513; font-size:.78rem; font-weight:700; white-space:nowrap; }
-      .oa-followup input[type="date"] { width:115px; border:0; color:#765513; background:transparent; font:inherit; font-size:.78rem; }
+      .oa-followup input[type="text"] { width:112px; border:0; color:#765513; background:transparent; font:inherit; font-size:.78rem; font-weight:700; }
       .oa-followup input:disabled { opacity:.75; }
       .followup-readonly { overflow:hidden; text-overflow:ellipsis; }
       .upload-missing { padding:5px 8px; border-style:dashed; color:#0b6d8a; font-size:.8rem; }
@@ -197,7 +197,7 @@
       ].sort((a,b) => a.date.localeCompare(b.date) || a.company.localeCompare(b.company));
       const currentStatus = app => statusChoices.includes(remoteStatuses[app.id]) ? remoteStatuses[app.id] : normalizeStatus(app.status);
       const classFor = status => status === 'Rejected' ? 'status-rejected' : status === 'OA Received' ? 'status-oa' : status === 'Interview Received' ? 'status-interview' : 'status-submitted';
-      const formatDueDate = date => date ? new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }) : '';
+      const followupLabel = followup => followup.note || (followup.done ? 'Done' : followup.due ? `Due ${new Date(`${followup.due}T00:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })}` : '');
       const updateAuthUi = () => {
         const owner = isOwner();
         authEmail.hidden = owner;
@@ -234,7 +234,7 @@
               : '<span class="missing">Not captured</span>';
           const followup = dashboardMetadata.followups[app.id] || {};
           const statusControl = current === 'OA Received'
-            ? `<div class="status-cell"><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /><div class="oa-followup">${isOwner() ? `<label><input class="followup-done" data-id="${app.id}" type="checkbox" ${followup.done ? 'checked' : ''} /> Done</label><span>Due</span><input class="followup-due" data-id="${app.id}" type="date" value="${escapeHtml(followup.due || '')}" aria-label="Due date for ${escapeHtml(app.company)}" />` : `<span class="followup-readonly">${followup.done ? 'Done' : 'Pending'}${followup.due ? ` · Due ${formatDueDate(followup.due)}` : ''}</span>`}</div></div>`
+            ? `<div class="status-cell"><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /><div class="oa-followup">${isOwner() ? `<input class="followup-note" data-id="${app.id}" type="text" value="${escapeHtml(followupLabel(followup))}" placeholder="Done or Due 06/09" aria-label="OA follow-up for ${escapeHtml(app.company)}" />` : `<span class="followup-readonly">${escapeHtml(followupLabel(followup)) || 'Pending'}</span>`}</div></div>`
             : `<input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} />`;
           return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td>${statusControl}</td><td>${posting}</td><td>${resume}</td></tr>`;
         }).join('');
@@ -247,11 +247,8 @@
           }
           saveStatus(event.target.dataset.id, next);
         }));
-        rows.querySelectorAll('.followup-done, .followup-due').forEach(input => input.addEventListener('change', event => {
-          const id = event.target.dataset.id;
-          const done = rows.querySelector(`.followup-done[data-id="${id}"]`).checked;
-          const due = rows.querySelector(`.followup-due[data-id="${id}"]`).value;
-          saveFollowup(id, { done, due });
+        rows.querySelectorAll('.followup-note').forEach(input => input.addEventListener('change', event => {
+          saveFollowup(event.target.dataset.id, { note: event.target.value.trim() });
         }));
         rows.querySelectorAll('.upload-missing').forEach(button => {
           const fileInput = rows.querySelector(`.resume-upload[data-id="${button.dataset.id}"]`);

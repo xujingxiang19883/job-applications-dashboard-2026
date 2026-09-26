@@ -17,6 +17,9 @@
       .subtitle { max-width:690px; margin:10px 0 0; color:var(--muted); }
       .save-note { max-width:330px; color:var(--muted); font-size:.86rem; text-align:right; }
       .save-note strong { color:var(--aqua); }
+      .market-tabs { display:flex; gap:8px; margin:0 0 18px 4px; }
+      .market-tab { border-color:#cbd5e1; background:#fff; }
+      .market-tab[aria-selected="true"] { border-color:var(--navy); color:#fff; background:var(--navy); }
       .metrics { display:grid; grid-template-columns:repeat(5,minmax(115px,1fr)); gap:12px; margin-bottom:18px; }
       .metric { min-height:92px; padding:16px; border:1px solid var(--line); border-radius:13px; background:#fff; box-shadow:var(--shadow); }
       .metric .label { color:var(--muted); font-size:.76rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
@@ -80,6 +83,11 @@
         <div class="metric"><span class="label">Rejected</span><span class="value" id="metric-rejected">0</span></div>
       </section>
 
+      <div class="market-tabs" role="tablist" aria-label="Application market">
+        <button class="market-tab" type="button" role="tab" id="market-us" aria-selected="true">United States</button>
+        <button class="market-tab" type="button" role="tab" id="market-hk" aria-selected="false">Hong Kong</button>
+      </div>
+
       <section class="panel" aria-labelledby="tracker-title">
         <div class="toolbar">
           <p id="tracker-title">Sorted by submitted date, earliest first. “Not captured” means no role-specific PDF was retained.</p>
@@ -136,6 +144,7 @@
 
       const statusChoices = ['Rejected', 'OA Received', 'Application Submitted', 'Interview Received'];
       const OWNER_EMAIL = 'jx466@cornell.edu';
+      const HK_PREFIX = '[[HK]] ';
       const supabaseClient = window.supabase.createClient(
         'https://znvwtwkvisyqlxkoifki.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpudnd0d2t2aXN5cWx4a29pZmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MTQ0MDQsImV4cCI6MjEwNTk5MDQwNH0.MpBGnfENO_PZunZaUyMytSfGorJ278vA5JHoCxS2IXA'
@@ -160,6 +169,8 @@
       const cancelEntry = document.getElementById('cancel-entry');
       const saveEntry = document.getElementById('save-entry');
       const formHelp = document.getElementById('form-help');
+      const marketUs = document.getElementById('market-us');
+      const marketHk = document.getElementById('market-hk');
       const escapeHtml = text => String(text).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
       const normalizeStatus = status => {
         const value = String(status).toLowerCase();
@@ -169,7 +180,11 @@
         return 'Application Submitted';
       };
       const isOwner = () => session?.user?.email?.toLowerCase() === OWNER_EMAIL;
-      const allApplications = () => [...defaultApplications, ...customApplications].sort((a,b) => a.date.localeCompare(b.date) || a.company.localeCompare(b.company));
+      let currentMarket = new URLSearchParams(window.location.search).get('market') === 'hk' ? 'HK' : 'US';
+      const allApplications = () => [
+        ...(currentMarket === 'US' ? defaultApplications : []),
+        ...customApplications.filter(app => app.market === currentMarket)
+      ].sort((a,b) => a.date.localeCompare(b.date) || a.company.localeCompare(b.company));
       const currentStatus = app => statusChoices.includes(remoteStatuses[app.id]) ? remoteStatuses[app.id] : normalizeStatus(app.status);
       const classFor = status => status === 'Rejected' ? 'status-rejected' : status === 'OA Received' ? 'status-oa' : status === 'Interview Received' ? 'status-interview' : 'status-submitted';
       const updateAuthUi = () => {
@@ -182,6 +197,18 @@
         if (owner) saveNote.innerHTML = 'Signed in as <strong>owner</strong>. Changes save permanently.';
         else if (!session) saveNote.innerHTML = 'View-only. Sign in with the <strong>Cornell owner email</strong> to save changes.';
         else saveNote.innerHTML = 'This account has <strong>view-only access</strong>.';
+      };
+      const updateMarketUi = () => {
+        const isHongKong = currentMarket === 'HK';
+        marketUs.setAttribute('aria-selected', String(!isHongKong));
+        marketHk.setAttribute('aria-selected', String(isHongKong));
+        addApplication.textContent = `Add ${isHongKong ? 'Hong Kong' : 'US'} application`;
+        document.getElementById('tracker-title').textContent = isHongKong
+          ? 'Hong Kong applications. This list starts empty and is sorted by submitted date.'
+          : 'US applications, sorted by submitted date, earliest first. “Not captured” means no role-specific PDF was retained.';
+        const url = new URL(window.location.href);
+        if (isHongKong) url.searchParams.set('market', 'hk'); else url.searchParams.delete('market');
+        window.history.replaceState({}, '', url);
       };
       const render = () => {
         rows.innerHTML = allApplications().map(app => {
@@ -229,15 +256,19 @@
           saveNote.innerHTML = 'Application records are temporarily <strong>unavailable</strong>.';
           return;
         }
-        customApplications.splice(0, customApplications.length, ...data.map(item => ({
+        customApplications.splice(0, customApplications.length, ...data.map(item => {
+          const market = item.company.startsWith(HK_PREFIX) ? 'HK' : 'US';
+          return {
           id: `custom-${item.id}`,
           date: item.submitted_date,
-          company: item.company,
+          company: market === 'HK' ? item.company.slice(HK_PREFIX.length) : item.company,
           role: item.role,
           url: item.application_url,
           resumeUrl: publicResumeUrl(item.resume_path),
-          status: item.status
-        })));
+          status: item.status,
+          market
+          };
+        }));
         render(); updateMetrics();
       };
       const saveStatus = async (applicationId, status) => {
@@ -315,7 +346,7 @@
         try {
           const resumePath = await uploadResume(resumeFile.files[0]);
           const { error } = await supabaseClient.from('custom_applications').insert({
-            submitted_date: entryDate.value, company, role,
+            submitted_date: entryDate.value, company: currentMarket === 'HK' ? `${HK_PREFIX}${company}` : company, role,
             application_url: url || null, resume_path: resumePath, status: 'Application Submitted'
           });
           if (error) throw error;
@@ -329,6 +360,8 @@
           saveEntry.disabled = false;
         }
       });
+      marketUs.addEventListener('click', () => { currentMarket = 'US'; entryForm.hidden = true; updateMarketUi(); render(); updateMetrics(); });
+      marketHk.addEventListener('click', () => { currentMarket = 'HK'; entryForm.hidden = true; updateMarketUi(); render(); updateMetrics(); });
       sendLink.addEventListener('click', async () => {
         const email = authEmail.value.trim().toLowerCase();
         if (email !== OWNER_EMAIL) {
@@ -358,6 +391,7 @@
         const { data: { session: initialSession } } = await supabaseClient.auth.getSession();
         session = initialSession;
         updateAuthUi();
+        updateMarketUi();
         await Promise.all([loadStatuses(), loadCustomApplications()]);
       })();
     </script>

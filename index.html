@@ -59,7 +59,7 @@
       .status-editor.status-submitted { border-color:#a9ded6; color:#08756b; background:#f2fcfa; }
       .status-editor.status-interview { border-color:#b9c8f1; color:#3455a0; background:#f5f7ff; }
       .status-editor:disabled { cursor:not-allowed; opacity:.82; }
-      .status-cell { display:grid; grid-template-columns:minmax(156px,1fr) minmax(150px,1fr); gap:7px; min-width:320px; }
+      .status-cell { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; width:min(375px,100%); min-width:0; }
       .status-cell .status-editor { min-width:0; width:100%; }
       .oa-followup { display:flex; align-items:center; gap:7px; min-height:35px; padding:5px 7px; border:1px solid #efd49c; border-radius:8px; background:#fffaf0; color:#765513; font-size:.78rem; font-weight:700; white-space:nowrap; }
       .oa-followup input[type="text"] { width:112px; border:0; color:#765513; background:transparent; font:inherit; font-size:.78rem; font-weight:700; }

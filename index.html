@@ -24,6 +24,8 @@
       .panel { overflow:hidden; border:1px solid var(--line); border-radius:16px; background:#fff; box-shadow:var(--shadow); }
       .toolbar { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line); }
       .toolbar p { margin:0; color:var(--muted); font-size:.9rem; }
+      .auth-controls { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; align-items:center; }
+      .auth-controls input { width:230px; border:1px solid #cbd5e1; border-radius:8px; padding:8px 9px; color:var(--navy); font:inherit; font-size:.85rem; }
       button { border:1px solid #b8c5d5; border-radius:8px; padding:8px 11px; color:var(--navy); background:#fff; font:inherit; font-size:.85rem; font-weight:700; cursor:pointer; }
       button:hover { border-color:var(--aqua); color:var(--aqua); }
       .table-wrap { overflow-x:auto; }
@@ -43,9 +45,10 @@
       .status-editor.status-oa { border-color:#efd49c; color:#8a5a00; background:#fffaf0; }
       .status-editor.status-submitted { border-color:#a9ded6; color:#08756b; background:#f2fcfa; }
       .status-editor.status-interview { border-color:#b9c8f1; color:#3455a0; background:#f5f7ff; }
+      .status-editor:disabled { cursor:not-allowed; opacity:.82; }
       .footer { display:flex; justify-content:space-between; gap:20px; margin:18px 4px 0; color:var(--muted); font-size:.82rem; }
       @media (max-width:900px) { .metrics { grid-template-columns:repeat(3,1fr); } .masthead { align-items:flex-start; flex-direction:column; } .save-note { text-align:left; } }
-      @media (max-width:560px) { .shell { padding:22px 14px 32px; } .metrics { grid-template-columns:repeat(2,1fr); } .toolbar { align-items:flex-start; flex-direction:column; } .metric { min-height:80px; } }
+      @media (max-width:560px) { .shell { padding:22px 14px 32px; } .metrics { grid-template-columns:repeat(2,1fr); } .toolbar { align-items:flex-start; flex-direction:column; } .auth-controls { justify-content:flex-start; } .metric { min-height:80px; } }
     </style>
   </head>
   <body>
@@ -54,9 +57,9 @@
         <div>
           <p class="eyebrow">Verified applications · 2026</p>
           <h1>Job application dashboard</h1>
-          <p class="subtitle">Chronological record of submitted applications and employer updates. Type or choose a Current Status to keep your browser view up to date.</p>
+          <p class="subtitle">Chronological record of submitted applications and employer updates. Status changes are saved permanently after owner sign-in.</p>
         </div>
-        <div class="save-note" id="save-note">Edits are saved <strong>only in this browser</strong> and can be reset below.</div>
+        <div class="save-note" id="save-note">Loading <strong>permanent status storage</strong>…</div>
       </header>
 
       <section class="metrics" aria-label="Application summary">
@@ -70,7 +73,11 @@
       <section class="panel" aria-labelledby="tracker-title">
         <div class="toolbar">
           <p id="tracker-title">Sorted by submitted date, earliest first. “Not captured” means no role-specific PDF was retained.</p>
-          <button type="button" id="reset-statuses">Reset browser edits</button>
+          <div class="auth-controls">
+            <input type="email" id="auth-email" placeholder="Cornell email for editing" autocomplete="email" />
+            <button type="button" id="send-link">Sign in to edit</button>
+            <button type="button" id="sign-out" hidden>Sign out</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -82,6 +89,7 @@
       </section>
       <footer class="footer"><span>Default statuses reflect the latest verified record.</span><span>Last compiled: 2026-09-24</span></footer>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
       const applications = [
         {id:'millennium-qr',date:'2026-08-29',company:'Millennium Management',role:'2027 Quantitative Researcher Intern, New York',status:'Rejected',url:'https://campusjobs.mlp.com/careers/job/755957778843-2027-quantitative-researcher-intern-new-york-new-york-new-york-united-states-of-america?domain=mlp.com',resume:null},
@@ -108,8 +116,18 @@
       ].sort((a,b) => a.date.localeCompare(b.date) || a.company.localeCompare(b.company));
 
       const statusChoices = ['Rejected', 'OA Received', 'Application Submitted', 'Interview Received'];
-      const saved = JSON.parse(localStorage.getItem('application-dashboard-statuses') || '{}');
+      const OWNER_EMAIL = 'jx466@cornell.edu';
+      const supabaseClient = window.supabase.createClient(
+        'https://znvwtwkvisyqlxkoifki.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpudnd0d2t2aXN5cWx4a29pZmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MTQ0MDQsImV4cCI6MjEwNTk5MDQwNH0.MpBGnfENO_PZunZaUyMytSfGorJ278vA5JHoCxS2IXA'
+      );
+      const remoteStatuses = {};
+      let session = null;
       const rows = document.getElementById('application-rows');
+      const authEmail = document.getElementById('auth-email');
+      const sendLink = document.getElementById('send-link');
+      const signOut = document.getElementById('sign-out');
+      const saveNote = document.getElementById('save-note');
       const escapeHtml = text => String(text).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
       const normalizeStatus = status => {
         const value = String(status).toLowerCase();
@@ -118,14 +136,24 @@
         if (value.includes('interview')) return 'Interview Received';
         return 'Application Submitted';
       };
-      const currentStatus = app => statusChoices.includes(saved[app.id]) ? saved[app.id] : normalizeStatus(app.status);
+      const isOwner = () => session?.user?.email?.toLowerCase() === OWNER_EMAIL;
+      const currentStatus = app => statusChoices.includes(remoteStatuses[app.id]) ? remoteStatuses[app.id] : normalizeStatus(app.status);
       const classFor = status => status === 'Rejected' ? 'status-rejected' : status === 'OA Received' ? 'status-oa' : status === 'Interview Received' ? 'status-interview' : 'status-submitted';
+      const updateAuthUi = () => {
+        const owner = isOwner();
+        authEmail.hidden = owner;
+        sendLink.hidden = owner;
+        signOut.hidden = !owner;
+        if (owner) saveNote.innerHTML = 'Signed in as <strong>owner</strong>. Changes save permanently.';
+        else if (!session) saveNote.innerHTML = 'View-only. Sign in with the <strong>Cornell owner email</strong> to save changes.';
+        else saveNote.innerHTML = 'This account has <strong>view-only access</strong>.';
+      };
       const render = () => {
         rows.innerHTML = applications.map(app => {
           const current = currentStatus(app);
           const posting = app.url ? `<a class="link" href="${escapeHtml(app.url)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>` : '<span class="missing">Not captured</span>';
           const resume = app.resume ? `<a class="link" href="resumes/${encodeURIComponent(app.resume)}" target="_blank" rel="noopener noreferrer">Open PDF ↗</a>` : '<span class="missing">Not captured</span>';
-          return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" /></td><td>${posting}</td><td>${resume}</td></tr>`;
+          return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /></td><td>${posting}</td><td>${resume}</td></tr>`;
         }).join('');
         rows.querySelectorAll('.status-editor').forEach(input => input.addEventListener('change', event => {
           const next = event.target.value.trim();
@@ -134,10 +162,7 @@
             document.getElementById('save-note').innerHTML = 'Choose one of the <strong>four listed statuses</strong>.';
             return;
           }
-          saved[event.target.dataset.id] = next;
-          localStorage.setItem('application-dashboard-statuses', JSON.stringify(saved));
-          document.getElementById('save-note').innerHTML = 'Saved in <strong>this browser</strong>.';
-          render(); updateMetrics();
+          saveStatus(event.target.dataset.id, next);
         }));
       };
       const updateMetrics = () => {
@@ -149,13 +174,60 @@
         document.getElementById('metric-interview').textContent = count(status => status === 'Interview Received');
         document.getElementById('metric-rejected').textContent = count(status => status === 'Rejected');
       };
-      document.getElementById('reset-statuses').addEventListener('click', () => {
-        localStorage.removeItem('application-dashboard-statuses');
-        Object.keys(saved).forEach(key => delete saved[key]);
-        document.getElementById('save-note').innerHTML = 'Browser edits reset to <strong>published defaults</strong>.';
+      const loadStatuses = async () => {
+        const { data, error } = await supabaseClient.from('application_statuses').select('application_id,status');
+        if (error) {
+          saveNote.innerHTML = 'Status storage is temporarily <strong>unavailable</strong>.';
+          return;
+        }
+        data.forEach(item => { remoteStatuses[item.application_id] = item.status; });
         render(); updateMetrics();
+      };
+      const saveStatus = async (applicationId, status) => {
+        saveNote.innerHTML = 'Saving <strong>permanently</strong>…';
+        const { error } = await supabaseClient.from('application_statuses').upsert(
+          { application_id: applicationId, status }, { onConflict: 'application_id' }
+        );
+        if (error) {
+          saveNote.innerHTML = 'Could not save status. Please <strong>sign in again</strong>.';
+          render();
+          return;
+        }
+        remoteStatuses[applicationId] = status;
+        saveNote.innerHTML = 'Status saved <strong>permanently</strong>.';
+        render(); updateMetrics();
+      };
+      sendLink.addEventListener('click', async () => {
+        const email = authEmail.value.trim().toLowerCase();
+        if (email !== OWNER_EMAIL) {
+          saveNote.innerHTML = 'Use the configured <strong>Cornell owner email</strong> to edit.';
+          return;
+        }
+        sendLink.disabled = true;
+        const { error } = await supabaseClient.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin + window.location.pathname }
+        });
+        sendLink.disabled = false;
+        saveNote.innerHTML = error
+          ? 'Could not send the sign-in link. Please try again.'
+          : 'Check your Cornell inbox for the <strong>sign-in link</strong>.';
       });
-      render(); updateMetrics();
+      signOut.addEventListener('click', async () => {
+        await supabaseClient.auth.signOut();
+        session = null;
+        updateAuthUi(); render();
+      });
+      supabaseClient.auth.onAuthStateChange((_event, nextSession) => {
+        session = nextSession;
+        updateAuthUi(); render();
+      });
+      (async () => {
+        const { data: { session: initialSession } } = await supabaseClient.auth.getSession();
+        session = initialSession;
+        updateAuthUi();
+        await loadStatuses();
+      })();
     </script>
   </body>
 </html>

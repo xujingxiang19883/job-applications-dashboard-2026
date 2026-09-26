@@ -42,7 +42,7 @@
       button { border:1px solid #b8c5d5; border-radius:8px; padding:8px 11px; color:var(--navy); background:#fff; font:inherit; font-size:.85rem; font-weight:700; cursor:pointer; }
       button:hover { border-color:var(--aqua); color:var(--aqua); }
       .table-wrap { overflow-x:auto; }
-      table { width:100%; min-width:1100px; border-collapse:collapse; }
+      table { width:100%; min-width:1240px; border-collapse:collapse; }
       th { padding:12px 16px; color:#506079; background:#f7f9fc; border-bottom:1px solid var(--line); text-align:left; font-size:.73rem; letter-spacing:.07em; text-transform:uppercase; white-space:nowrap; }
       td { padding:14px 16px; border-bottom:1px solid #e8edf3; vertical-align:top; }
       tbody tr:last-child td { border-bottom:0; }
@@ -59,6 +59,14 @@
       .status-editor.status-submitted { border-color:#a9ded6; color:#08756b; background:#f2fcfa; }
       .status-editor.status-interview { border-color:#b9c8f1; color:#3455a0; background:#f5f7ff; }
       .status-editor:disabled { cursor:not-allowed; opacity:.82; }
+      .status-cell { display:grid; grid-template-columns:minmax(156px,1fr) minmax(150px,1fr); gap:7px; min-width:320px; }
+      .status-cell .status-editor { min-width:0; width:100%; }
+      .oa-followup { display:flex; align-items:center; gap:7px; min-height:35px; padding:5px 7px; border:1px solid #efd49c; border-radius:8px; background:#fffaf0; color:#765513; font-size:.78rem; font-weight:700; white-space:nowrap; }
+      .oa-followup input[type="date"] { width:115px; border:0; color:#765513; background:transparent; font:inherit; font-size:.78rem; }
+      .oa-followup input:disabled { opacity:.75; }
+      .followup-readonly { overflow:hidden; text-overflow:ellipsis; }
+      .upload-missing { padding:5px 8px; border-style:dashed; color:#0b6d8a; font-size:.8rem; }
+      .upload-missing.dragging { border-color:var(--aqua); color:#08756b; background:#f2fcfa; }
       .footer { display:flex; justify-content:space-between; gap:20px; margin:18px 4px 0; color:var(--muted); font-size:.82rem; }
       @media (max-width:900px) { .metrics { grid-template-columns:repeat(3,1fr); } .masthead { align-items:flex-start; flex-direction:column; } .save-note { text-align:left; } .entry-form { grid-template-columns:repeat(2,minmax(0,1fr)); } .drop-zone { grid-column:span 1; } }
       @media (max-width:560px) { .shell { padding:22px 14px 32px; } .metrics { grid-template-columns:repeat(2,1fr); } .toolbar { align-items:flex-start; flex-direction:column; } .auth-controls { justify-content:flex-start; } .metric { min-height:80px; } }
@@ -151,6 +159,8 @@
       );
       const remoteStatuses = {};
       const customApplications = [];
+      const dashboardMetadata = { followups: {}, resumes: {} };
+      const metadataPath = 'metadata/dashboard.json';
       let session = null;
       const rows = document.getElementById('application-rows');
       const authEmail = document.getElementById('auth-email');
@@ -187,6 +197,7 @@
       ].sort((a,b) => a.date.localeCompare(b.date) || a.company.localeCompare(b.company));
       const currentStatus = app => statusChoices.includes(remoteStatuses[app.id]) ? remoteStatuses[app.id] : normalizeStatus(app.status);
       const classFor = status => status === 'Rejected' ? 'status-rejected' : status === 'OA Received' ? 'status-oa' : status === 'Interview Received' ? 'status-interview' : 'status-submitted';
+      const formatDueDate = date => date ? new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }) : '';
       const updateAuthUi = () => {
         const owner = isOwner();
         authEmail.hidden = owner;
@@ -214,9 +225,18 @@
         rows.innerHTML = allApplications().map(app => {
           const current = currentStatus(app);
           const posting = app.url ? `<a class="link" href="${escapeHtml(app.url)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>` : '<span class="missing">Not captured</span>';
-          const resumeHref = app.resumeUrl || (app.resume ? `resumes/${encodeURIComponent(app.resume)}` : null);
-          const resume = resumeHref ? `<a class="link" href="${escapeHtml(resumeHref)}" target="_blank" rel="noopener noreferrer">Open PDF ↗</a>` : '<span class="missing">Not captured</span>';
-          return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /></td><td>${posting}</td><td>${resume}</td></tr>`;
+          const uploadedPath = dashboardMetadata.resumes[app.id];
+          const resumeHref = uploadedPath ? publicResumeUrl(uploadedPath) : app.resumeUrl || (app.resume ? `resumes/${encodeURIComponent(app.resume)}` : null);
+          const resume = resumeHref
+            ? `<a class="link" href="${escapeHtml(resumeHref)}" target="_blank" rel="noopener noreferrer">Open PDF ↗</a>`
+            : isOwner()
+              ? `<button type="button" class="upload-missing" data-id="${app.id}">Upload PDF</button><input class="resume-upload" data-id="${app.id}" type="file" accept="application/pdf,.pdf" hidden />`
+              : '<span class="missing">Not captured</span>';
+          const followup = dashboardMetadata.followups[app.id] || {};
+          const statusControl = current === 'OA Received'
+            ? `<div class="status-cell"><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /><div class="oa-followup">${isOwner() ? `<label><input class="followup-done" data-id="${app.id}" type="checkbox" ${followup.done ? 'checked' : ''} /> Done</label><span>Due</span><input class="followup-due" data-id="${app.id}" type="date" value="${escapeHtml(followup.due || '')}" aria-label="Due date for ${escapeHtml(app.company)}" />` : `<span class="followup-readonly">${followup.done ? 'Done' : 'Pending'}${followup.due ? ` · Due ${formatDueDate(followup.due)}` : ''}</span>`}</div></div>`
+            : `<input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} />`;
+          return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td>${statusControl}</td><td>${posting}</td><td>${resume}</td></tr>`;
         }).join('');
         rows.querySelectorAll('.status-editor').forEach(input => input.addEventListener('change', event => {
           const next = event.target.value.trim();
@@ -227,6 +247,20 @@
           }
           saveStatus(event.target.dataset.id, next);
         }));
+        rows.querySelectorAll('.followup-done, .followup-due').forEach(input => input.addEventListener('change', event => {
+          const id = event.target.dataset.id;
+          const done = rows.querySelector(`.followup-done[data-id="${id}"]`).checked;
+          const due = rows.querySelector(`.followup-due[data-id="${id}"]`).value;
+          saveFollowup(id, { done, due });
+        }));
+        rows.querySelectorAll('.upload-missing').forEach(button => {
+          const fileInput = rows.querySelector(`.resume-upload[data-id="${button.dataset.id}"]`);
+          button.addEventListener('click', () => fileInput.click());
+          button.addEventListener('dragover', event => { event.preventDefault(); button.classList.add('dragging'); });
+          button.addEventListener('dragleave', () => button.classList.remove('dragging'));
+          button.addEventListener('drop', event => { event.preventDefault(); button.classList.remove('dragging'); uploadMissingResume(button.dataset.id, event.dataTransfer.files[0]); });
+          fileInput.addEventListener('change', () => uploadMissingResume(button.dataset.id, fileInput.files[0]));
+        });
       };
       const updateMetrics = () => {
         const statuses = allApplications().map(currentStatus);
@@ -247,6 +281,56 @@
         render(); updateMetrics();
       };
       const publicResumeUrl = path => path ? supabaseClient.storage.from('dashboard-resumes').getPublicUrl(path).data.publicUrl : null;
+      const loadDashboardMetadata = async () => {
+        const { data, error } = await supabaseClient.storage.from('dashboard-resumes').download(metadataPath);
+        if (error || !data) return;
+        try {
+          const saved = JSON.parse(await data.text());
+          Object.assign(dashboardMetadata.followups, saved.followups || {});
+          Object.assign(dashboardMetadata.resumes, saved.resumes || {});
+        } catch (_) {
+          // Keep the dashboard usable if an old metadata file is unreadable.
+        }
+      };
+      const saveDashboardMetadata = async () => {
+        const body = new Blob([JSON.stringify(dashboardMetadata)], { type: 'application/json' });
+        const { error } = await supabaseClient.storage.from('dashboard-resumes').upload(metadataPath, body, {
+          cacheControl: '3600', contentType: 'application/json', upsert: true
+        });
+        if (error) throw error;
+      };
+      const saveFollowup = async (applicationId, followup) => {
+        dashboardMetadata.followups[applicationId] = followup;
+        saveNote.innerHTML = 'Saving <strong>OA follow-up</strong>…';
+        try {
+          await saveDashboardMetadata();
+          saveNote.innerHTML = 'OA follow-up saved <strong>permanently</strong>.';
+          render();
+        } catch (_) {
+          saveNote.innerHTML = 'Could not save the OA follow-up. Please <strong>sign in again</strong>.';
+        }
+      };
+      const uploadMissingResume = async (applicationId, file) => {
+        if (!file) return;
+        if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+          saveNote.innerHTML = 'Please choose a <strong>PDF</strong> resume.';
+          return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          saveNote.innerHTML = 'The resume PDF must be <strong>10 MB or smaller</strong>.';
+          return;
+        }
+        saveNote.innerHTML = 'Uploading <strong>resume PDF</strong>…';
+        try {
+          const path = await uploadResume(file);
+          dashboardMetadata.resumes[applicationId] = path;
+          await saveDashboardMetadata();
+          saveNote.innerHTML = 'Resume PDF saved <strong>permanently</strong>.';
+          render();
+        } catch (_) {
+          saveNote.innerHTML = 'Could not upload the resume. Please <strong>sign in again</strong>.';
+        }
+      };
       const loadCustomApplications = async () => {
         const { data, error } = await supabaseClient
           .from('custom_applications')
@@ -392,7 +476,9 @@
         session = initialSession;
         updateAuthUi();
         updateMarketUi();
-        await Promise.all([loadStatuses(), loadCustomApplications()]);
+        await Promise.all([loadStatuses(), loadCustomApplications(), loadDashboardMetadata()]);
+        render();
+        updateMetrics();
       })();
     </script>
   </body>

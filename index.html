@@ -162,6 +162,7 @@
       const remoteStatuses = {};
       const remoteFollowups = {};
       const remoteFollowupKeys = {};
+      const remoteDocuments = {};
       const FOLLOWUP_PREFIX = '__oa_followup__:';
       const customApplications = [];
       const dashboardMetadata = { followups: {}, resumes: {}, coverLetters: {} };
@@ -241,10 +242,12 @@
           const current = currentStatus(app);
           const posting = app.url ? `<a class="link" href="${escapeHtml(app.url)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>` : '<span class="missing">Not captured</span>';
           const documentCell = (kind, label) => {
-            const key = kind === 'resume' ? 'resumes' : 'coverLetters';
-            const existing = dashboardMetadata[key][app.id];
-            const href = existing
-              ? publicResumeUrl(existing)
+            const documentType = kind === 'resume' ? 'resume' : 'cover_letter';
+            const legacyKey = kind === 'resume' ? 'resumes' : 'coverLetters';
+            const databasePath = remoteDocuments[app.id]?.[documentType];
+            const legacyPath = dashboardMetadata[legacyKey][app.id];
+            const href = databasePath || legacyPath
+              ? publicResumeUrl(databasePath || legacyPath)
               : kind === 'resume'
                 ? app.resumeUrl || (app.resume ? `resumes/${encodeURIComponent(app.resume)}` : null)
                 : app.coverLetterUrl || (app.coverLetter ? `cover-letters/${encodeURIComponent(app.coverLetter)}` : null);
@@ -311,6 +314,20 @@
         });
         render(); updateMetrics();
       };
+      const loadDocuments = async () => {
+        const { data, error } = await supabaseClient
+          .from('application_documents')
+          .select('application_id,document_type,storage_path');
+        if (error) {
+          saveNote.innerHTML = 'Document records are temporarily <strong>unavailable</strong>.';
+          return;
+        }
+        data.forEach(item => {
+          remoteDocuments[item.application_id] ||= {};
+          remoteDocuments[item.application_id][item.document_type] = item.storage_path;
+        });
+        render();
+      };
       const publicResumeUrl = path => path ? supabaseClient.storage.from('dashboard-resumes').getPublicUrl(path).data.publicUrl : null;
       const loadDashboardMetadata = async () => {
         const { data, error } = await supabaseClient.storage.from('dashboard-resumes').download(metadataPath);
@@ -352,7 +369,7 @@
       const uploadMissingDocument = async (applicationId, kind, file) => {
         if (!file) return;
         const label = kind === 'resume' ? 'resume' : 'cover letter';
-        const metadataKey = kind === 'resume' ? 'resumes' : 'coverLetters';
+        const documentType = kind === 'resume' ? 'resume' : 'cover_letter';
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
           saveNote.innerHTML = `Please choose a <strong>PDF</strong> ${label}.`;
           return;
@@ -364,8 +381,9 @@
         saveNote.innerHTML = `Uploading <strong>${label} PDF</strong>…`;
         try {
           const path = await uploadDocument(file, kind);
-          dashboardMetadata[metadataKey][applicationId] = path;
-          await saveDashboardMetadata();
+          await saveDocumentRecord(applicationId, documentType, path);
+          remoteDocuments[applicationId] ||= {};
+          remoteDocuments[applicationId][documentType] = path;
           saveNote.innerHTML = `${label[0].toUpperCase() + label.slice(1)} PDF saved <strong>permanently</strong>.`;
           render();
         } catch (_) {
@@ -450,6 +468,13 @@
         if (error) throw error;
         return path;
       };
+      const saveDocumentRecord = async (applicationId, documentType, storagePath) => {
+        const { error } = await supabaseClient.from('application_documents').upsert(
+          { application_id: applicationId, document_type: documentType, storage_path: storagePath },
+          { onConflict: 'application_id,document_type' }
+        );
+        if (error) throw error;
+      };
       const openEntryForm = () => {
         resetEntryForm();
         entryForm.hidden = false;
@@ -486,9 +511,12 @@
             application_url: url || null, resume_path: resumePath, status: 'Application Submitted'
           }).select('id').single();
           if (error) throw error;
-          if (coverLetterPath && data?.id) {
-            dashboardMetadata.coverLetters[`custom-${data.id}`] = coverLetterPath;
-            await saveDashboardMetadata();
+          if (data?.id) {
+            const applicationId = `custom-${data.id}`;
+            const documentWrites = [];
+            if (resumePath) documentWrites.push(saveDocumentRecord(applicationId, 'resume', resumePath));
+            if (coverLetterPath) documentWrites.push(saveDocumentRecord(applicationId, 'cover_letter', coverLetterPath));
+            await Promise.all(documentWrites);
           }
           entryForm.hidden = true;
           await loadCustomApplications();
@@ -532,7 +560,7 @@
         session = initialSession;
         updateAuthUi();
         updateMarketUi();
-        await Promise.all([loadStatuses(), loadCustomApplications(), loadDashboardMetadata()]);
+        await Promise.all([loadStatuses(), loadDocuments(), loadCustomApplications(), loadDashboardMetadata()]);
         render();
         updateMetrics();
       })();

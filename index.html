@@ -42,7 +42,7 @@
       button { border:1px solid #b8c5d5; border-radius:8px; padding:8px 11px; color:var(--navy); background:#fff; font:inherit; font-size:.85rem; font-weight:700; cursor:pointer; }
       button:hover { border-color:var(--aqua); color:var(--aqua); }
       .table-wrap { overflow-x:auto; }
-      table { width:100%; min-width:1240px; border-collapse:collapse; }
+      table { width:100%; min-width:1390px; border-collapse:collapse; }
       th { padding:12px 16px; color:#506079; background:#f7f9fc; border-bottom:1px solid var(--line); text-align:left; font-size:.73rem; letter-spacing:.07em; text-transform:uppercase; white-space:nowrap; }
       td { padding:14px 16px; border-bottom:1px solid #e8edf3; vertical-align:top; }
       tbody tr:last-child td { border-bottom:0; }
@@ -99,7 +99,7 @@
 
       <section class="panel" aria-labelledby="tracker-title">
         <div class="toolbar">
-          <p id="tracker-title">Sorted by submitted date, earliest first. “Not captured” means no role-specific PDF was retained.</p>
+          <p id="tracker-title">Sorted by submitted date, earliest first. “Not captured” means no role-specific document was retained.</p>
           <div class="auth-controls">
             <input type="email" id="auth-email" placeholder="Cornell email for editing" autocomplete="email" />
             <button type="button" id="send-link">Sign in to edit</button>
@@ -113,12 +113,13 @@
           <div class="field"><label for="entry-role">Role</label><input id="entry-role" type="text" placeholder="Internship or position title" required /></div>
           <div class="field"><label for="entry-url">Application / JD URL</label><input id="entry-url" type="url" placeholder="https://…" /></div>
           <div class="drop-zone" id="drop-zone" role="button" tabindex="0" aria-label="Upload resume PDF">Drop a resume PDF here, or click to choose one<input id="resume-file" type="file" accept="application/pdf,.pdf" hidden /></div>
+          <div class="drop-zone" id="cover-letter-drop-zone" role="button" tabindex="0" aria-label="Upload cover letter PDF">Drop a cover letter PDF here, or click to choose one<input id="cover-letter-file" type="file" accept="application/pdf,.pdf" hidden /></div>
           <div class="form-actions"><button type="button" id="cancel-entry">Cancel</button><button type="submit" id="save-entry">Save application</button></div>
-          <p class="form-help" id="form-help">The PDF is optional; files are limited to 10 MB and published as an “Open PDF ↗” link.</p>
+          <p class="form-help" id="form-help">Both PDFs are optional; files are limited to 10 MB and published as “Open PDF ↗” links.</p>
         </form>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Submitted</th><th>Company</th><th>Role</th><th>Current status</th><th>Application / JD</th><th>Resume PDF</th></tr></thead>
+            <thead><tr><th>Submitted</th><th>Company</th><th>Role</th><th>Current status</th><th>Application / JD</th><th>Resume PDF</th><th>Cover Letter</th></tr></thead>
             <tbody id="application-rows"></tbody>
           </table>
           <datalist id="status-options"><option value="Rejected"></option><option value="OA Received"></option><option value="Application Submitted"></option><option value="Interview Received"></option></datalist>
@@ -163,7 +164,7 @@
       const remoteFollowupKeys = {};
       const FOLLOWUP_PREFIX = '__oa_followup__:';
       const customApplications = [];
-      const dashboardMetadata = { followups: {}, resumes: {} };
+      const dashboardMetadata = { followups: {}, resumes: {}, coverLetters: {} };
       const metadataPath = 'metadata/dashboard.json';
       let session = null;
       const rows = document.getElementById('application-rows');
@@ -180,6 +181,8 @@
       const entryUrl = document.getElementById('entry-url');
       const resumeFile = document.getElementById('resume-file');
       const dropZone = document.getElementById('drop-zone');
+      const coverLetterFile = document.getElementById('cover-letter-file');
+      const coverLetterDropZone = document.getElementById('cover-letter-drop-zone');
       const cancelEntry = document.getElementById('cancel-entry');
       const saveEntry = document.getElementById('save-entry');
       const formHelp = document.getElementById('form-help');
@@ -228,7 +231,7 @@
         addApplication.textContent = `Add ${isHongKong ? 'Hong Kong' : 'US'} application`;
         document.getElementById('tracker-title').textContent = isHongKong
           ? 'Hong Kong applications. This list starts empty and is sorted by submitted date.'
-          : 'US applications, sorted by submitted date, earliest first. “Not captured” means no role-specific PDF was retained.';
+          : 'US applications, sorted by submitted date, earliest first. “Not captured” means no role-specific document was retained.';
         const url = new URL(window.location.href);
         if (isHongKong) url.searchParams.set('market', 'hk'); else url.searchParams.delete('market');
         window.history.replaceState({}, '', url);
@@ -237,18 +240,27 @@
         rows.innerHTML = allApplications().map(app => {
           const current = currentStatus(app);
           const posting = app.url ? `<a class="link" href="${escapeHtml(app.url)}" target="_blank" rel="noopener noreferrer">Open posting ↗</a>` : '<span class="missing">Not captured</span>';
-          const uploadedPath = dashboardMetadata.resumes[app.id];
-          const resumeHref = uploadedPath ? publicResumeUrl(uploadedPath) : app.resumeUrl || (app.resume ? `resumes/${encodeURIComponent(app.resume)}` : null);
-          const resume = resumeHref
-            ? `<a class="link" href="${escapeHtml(resumeHref)}" target="_blank" rel="noopener noreferrer">Open PDF ↗</a>`
-            : isOwner()
-              ? `<button type="button" class="upload-missing" data-id="${app.id}">Upload PDF</button><input class="resume-upload" data-id="${app.id}" type="file" accept="application/pdf,.pdf" hidden />`
-              : '<span class="missing">Not captured</span>';
+          const documentCell = (kind, label) => {
+            const key = kind === 'resume' ? 'resumes' : 'coverLetters';
+            const existing = dashboardMetadata[key][app.id];
+            const href = existing
+              ? publicResumeUrl(existing)
+              : kind === 'resume'
+                ? app.resumeUrl || (app.resume ? `resumes/${encodeURIComponent(app.resume)}` : null)
+                : app.coverLetterUrl || (app.coverLetter ? `cover-letters/${encodeURIComponent(app.coverLetter)}` : null);
+            return href
+              ? `<a class="link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">Open PDF ↗</a>`
+              : isOwner()
+                ? `<button type="button" class="upload-missing" data-id="${app.id}" data-kind="${kind}">Upload PDF</button><input class="document-upload" data-id="${app.id}" data-kind="${kind}" type="file" accept="application/pdf,.pdf" hidden />`
+                : '<span class="missing">Not captured</span>';
+          };
+          const resume = documentCell('resume', 'Resume');
+          const coverLetter = documentCell('cover-letter', 'Cover letter');
           const followup = { note: remoteFollowups[app.id] || '' };
           const statusControl = current === 'OA Received'
             ? `<div class="status-cell" style="width:375px;min-width:375px;max-width:375px"><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /><div class="oa-followup">${isOwner() ? `<input class="followup-note" data-id="${app.id}" type="text" value="${escapeHtml(followupLabel(followup))}" placeholder="Done or Due 06/09" aria-label="OA follow-up for ${escapeHtml(app.company)}" />` : `<span class="followup-readonly">${escapeHtml(followupLabel(followup)) || 'Pending'}</span>`}</div></div>`
             : `<input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} />`;
-          return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td>${statusControl}</td><td>${posting}</td><td>${resume}</td></tr>`;
+          return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td>${statusControl}</td><td>${posting}</td><td>${resume}</td><td>${coverLetter}</td></tr>`;
         }).join('');
         rows.querySelectorAll('.status-editor').forEach(input => input.addEventListener('change', event => {
           const next = event.target.value.trim();
@@ -263,12 +275,12 @@
           saveFollowup(event.target.dataset.id, { note: event.target.value.trim() });
         }));
         rows.querySelectorAll('.upload-missing').forEach(button => {
-          const fileInput = rows.querySelector(`.resume-upload[data-id="${button.dataset.id}"]`);
+          const fileInput = rows.querySelector(`.document-upload[data-id="${button.dataset.id}"][data-kind="${button.dataset.kind}"]`);
           button.addEventListener('click', () => fileInput.click());
           button.addEventListener('dragover', event => { event.preventDefault(); button.classList.add('dragging'); });
           button.addEventListener('dragleave', () => button.classList.remove('dragging'));
-          button.addEventListener('drop', event => { event.preventDefault(); button.classList.remove('dragging'); uploadMissingResume(button.dataset.id, event.dataTransfer.files[0]); });
-          fileInput.addEventListener('change', () => uploadMissingResume(button.dataset.id, fileInput.files[0]));
+          button.addEventListener('drop', event => { event.preventDefault(); button.classList.remove('dragging'); uploadMissingDocument(button.dataset.id, button.dataset.kind, event.dataTransfer.files[0]); });
+          fileInput.addEventListener('change', () => uploadMissingDocument(button.dataset.id, button.dataset.kind, fileInput.files[0]));
         });
       };
       const updateMetrics = () => {
@@ -307,6 +319,7 @@
           const saved = JSON.parse(await data.text());
           Object.assign(dashboardMetadata.followups, saved.followups || {});
           Object.assign(dashboardMetadata.resumes, saved.resumes || {});
+          Object.assign(dashboardMetadata.coverLetters, saved.coverLetters || {});
         } catch (_) {
           // Keep the dashboard usable if an old metadata file is unreadable.
         }
@@ -336,25 +349,27 @@
           saveNote.innerHTML = 'Could not save the OA follow-up. Please <strong>sign in again</strong>.';
         }
       };
-      const uploadMissingResume = async (applicationId, file) => {
+      const uploadMissingDocument = async (applicationId, kind, file) => {
         if (!file) return;
+        const label = kind === 'resume' ? 'resume' : 'cover letter';
+        const metadataKey = kind === 'resume' ? 'resumes' : 'coverLetters';
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-          saveNote.innerHTML = 'Please choose a <strong>PDF</strong> resume.';
+          saveNote.innerHTML = `Please choose a <strong>PDF</strong> ${label}.`;
           return;
         }
         if (file.size > 10 * 1024 * 1024) {
-          saveNote.innerHTML = 'The resume PDF must be <strong>10 MB or smaller</strong>.';
+          saveNote.innerHTML = `The ${label} PDF must be <strong>10 MB or smaller</strong>.`;
           return;
         }
-        saveNote.innerHTML = 'Uploading <strong>resume PDF</strong>…';
+        saveNote.innerHTML = `Uploading <strong>${label} PDF</strong>…`;
         try {
-          const path = await uploadResume(file);
-          dashboardMetadata.resumes[applicationId] = path;
+          const path = await uploadDocument(file, kind);
+          dashboardMetadata[metadataKey][applicationId] = path;
           await saveDashboardMetadata();
-          saveNote.innerHTML = 'Resume PDF saved <strong>permanently</strong>.';
+          saveNote.innerHTML = `${label[0].toUpperCase() + label.slice(1)} PDF saved <strong>permanently</strong>.`;
           render();
         } catch (_) {
-          saveNote.innerHTML = 'Could not upload the resume. Please <strong>sign in again</strong>.';
+          saveNote.innerHTML = `Could not upload the ${label}. Please <strong>sign in again</strong>.`;
         }
       };
       const loadCustomApplications = async () => {
@@ -400,10 +415,15 @@
         entryDate.value = new Date().toISOString().slice(0, 10);
         dropZone.textContent = 'Drop a resume PDF here, or click to choose one';
         dropZone.append(resumeFile);
-        formHelp.textContent = 'The PDF is optional; files are limited to 10 MB and published as an “Open PDF ↗” link.';
+        coverLetterDropZone.textContent = 'Drop a cover letter PDF here, or click to choose one';
+        coverLetterDropZone.append(coverLetterFile);
+        formHelp.textContent = 'Both PDFs are optional; files are limited to 10 MB and published as “Open PDF ↗” links.';
       };
-      const setResumeFile = file => {
+      const setDocumentFile = (file, kind) => {
         if (!file) return;
+        const label = kind === 'resume' ? 'resume' : 'cover letter';
+        const input = kind === 'resume' ? resumeFile : coverLetterFile;
+        const zone = kind === 'resume' ? dropZone : coverLetterDropZone;
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
           formHelp.textContent = 'Please choose a PDF file.';
           return;
@@ -414,15 +434,16 @@
         }
         const transfer = new DataTransfer();
         transfer.items.add(file);
-        resumeFile.files = transfer.files;
-        dropZone.textContent = `Selected: ${file.name}`;
-        dropZone.append(resumeFile);
-        formHelp.textContent = 'PDF ready to upload when you save the application.';
+        input.files = transfer.files;
+        zone.textContent = `Selected ${label}: ${file.name}`;
+        zone.append(input);
+        formHelp.textContent = `${label[0].toUpperCase() + label.slice(1)} PDF ready to upload when you save the application.`;
       };
-      const uploadResume = async file => {
+      const uploadDocument = async (file, kind) => {
         if (!file) return null;
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'resume.pdf';
-        const path = `resumes/${crypto.randomUUID()}-${safeName}`;
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || `${kind}.pdf`;
+        const folder = kind === 'resume' ? 'resumes' : 'cover-letters';
+        const path = `${folder}/${crypto.randomUUID()}-${safeName}`;
         const { error } = await supabaseClient.storage.from('dashboard-resumes').upload(path, file, {
           cacheControl: '3600', contentType: 'application/pdf', upsert: false
         });
@@ -436,14 +457,18 @@
       };
       addApplication.addEventListener('click', openEntryForm);
       cancelEntry.addEventListener('click', () => { entryForm.hidden = true; resetEntryForm(); });
-      dropZone.addEventListener('click', () => resumeFile.click());
-      dropZone.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); resumeFile.click(); } });
-      dropZone.addEventListener('dragover', event => { event.preventDefault(); dropZone.classList.add('dragging'); });
-      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
-      dropZone.addEventListener('drop', event => {
-        event.preventDefault(); dropZone.classList.remove('dragging'); setResumeFile(event.dataTransfer.files[0]);
-      });
-      resumeFile.addEventListener('change', () => setResumeFile(resumeFile.files[0]));
+      const bindDocumentDropZone = (zone, input, kind) => {
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); input.click(); } });
+        zone.addEventListener('dragover', event => { event.preventDefault(); zone.classList.add('dragging'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragging'));
+        zone.addEventListener('drop', event => {
+          event.preventDefault(); zone.classList.remove('dragging'); setDocumentFile(event.dataTransfer.files[0], kind);
+        });
+        input.addEventListener('change', () => setDocumentFile(input.files[0], kind));
+      };
+      bindDocumentDropZone(dropZone, resumeFile, 'resume');
+      bindDocumentDropZone(coverLetterDropZone, coverLetterFile, 'cover-letter');
       entryForm.addEventListener('submit', async event => {
         event.preventDefault();
         if (!isOwner()) return;
@@ -454,12 +479,17 @@
         saveEntry.disabled = true;
         formHelp.textContent = 'Saving application permanently…';
         try {
-          const resumePath = await uploadResume(resumeFile.files[0]);
-          const { error } = await supabaseClient.from('custom_applications').insert({
+          const resumePath = await uploadDocument(resumeFile.files[0], 'resume');
+          const coverLetterPath = await uploadDocument(coverLetterFile.files[0], 'cover-letter');
+          const { data, error } = await supabaseClient.from('custom_applications').insert({
             submitted_date: entryDate.value, company: currentMarket === 'HK' ? `${HK_PREFIX}${company}` : company, role,
             application_url: url || null, resume_path: resumePath, status: 'Application Submitted'
-          });
+          }).select('id').single();
           if (error) throw error;
+          if (coverLetterPath && data?.id) {
+            dashboardMetadata.coverLetters[`custom-${data.id}`] = coverLetterPath;
+            await saveDashboardMetadata();
+          }
           entryForm.hidden = true;
           await loadCustomApplications();
           saveNote.innerHTML = 'Application saved <strong>permanently</strong>.';

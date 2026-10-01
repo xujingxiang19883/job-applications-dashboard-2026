@@ -65,6 +65,8 @@
       .oa-followup { display:flex; align-items:center; gap:7px; min-height:35px; padding:5px 7px; border:1px solid #efd49c; border-radius:8px; background:#fffaf0; color:#765513; font-size:.78rem; font-weight:700; white-space:nowrap; }
       .oa-followup input[type="text"] { width:112px; border:0; color:#765513; background:transparent; font:inherit; font-size:.78rem; font-weight:700; }
       .oa-followup input:disabled { opacity:.75; }
+      .interview-followup { border-color:#b9c8f1; background:#f5f7ff; color:#3455a0; }
+      .interview-followup input[type="text"] { color:#3455a0; }
       .followup-readonly { overflow:hidden; text-overflow:ellipsis; }
       .upload-missing { padding:5px 8px; border-style:dashed; color:#0b6d8a; font-size:.8rem; }
       .upload-missing.dragging { border-color:var(--aqua); color:#08756b; background:#f2fcfa; }
@@ -162,8 +164,11 @@
       const remoteStatuses = {};
       const remoteFollowups = {};
       const remoteFollowupKeys = {};
+      const remoteInterviewDates = {};
+      const remoteInterviewDateKeys = {};
       const remoteDocuments = {};
       const FOLLOWUP_PREFIX = '__oa_followup__:';
+      const INTERVIEW_DATE_PREFIX = '__interview_date__:';
       const customApplications = [];
       const dashboardMetadata = { followups: {}, resumes: {}, coverLetters: {} };
       const metadataPath = 'metadata/dashboard.json';
@@ -207,12 +212,23 @@
       const classFor = status => status === 'Rejected' ? 'status-rejected' : status === 'OA Received' ? 'status-oa' : status === 'Interview Received' ? 'status-interview' : 'status-submitted';
       const followupLabel = followup => followup.note || (followup.done ? 'Done' : followup.due ? `Due ${new Date(`${followup.due}T00:00:00`).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })}` : '');
       const followupKey = (applicationId, note) => `${FOLLOWUP_PREFIX}${encodeURIComponent(applicationId)}:${encodeURIComponent(note)}`;
-      const parseFollowupKey = key => {
-        const rest = key.slice(FOLLOWUP_PREFIX.length);
+      const interviewDateKey = (applicationId, date) => `${INTERVIEW_DATE_PREFIX}${encodeURIComponent(applicationId)}:${encodeURIComponent(date)}`;
+      const parseAuxiliaryKey = (key, prefix) => {
+        const rest = key.slice(prefix.length);
         const separator = rest.indexOf(':');
         if (separator === -1) return null;
-        try { return { applicationId: decodeURIComponent(rest.slice(0, separator)), note: decodeURIComponent(rest.slice(separator + 1)) }; }
+        try { return { applicationId: decodeURIComponent(rest.slice(0, separator)), value: decodeURIComponent(rest.slice(separator + 1)) }; }
         catch (_) { return null; }
+      };
+      const parseFollowupKey = key => {
+        const parsed = parseAuxiliaryKey(key, FOLLOWUP_PREFIX);
+        return parsed ? { applicationId: parsed.applicationId, note: parsed.value } : null;
+      };
+      const parseInterviewDateKey = key => parseAuxiliaryKey(key, INTERVIEW_DATE_PREFIX);
+      const isValidMonthDay = value => {
+        if (!/^\d{2}\/\d{2}$/.test(value)) return false;
+        const [month, day] = value.split('/').map(Number);
+        return month >= 1 && month <= 12 && day >= 1 && day <= new Date(2028, month, 0).getDate();
       };
       const updateAuthUi = () => {
         const owner = isOwner();
@@ -260,8 +276,11 @@
           const resume = documentCell('resume', 'Resume');
           const coverLetter = documentCell('cover-letter', 'Cover letter');
           const followup = { note: remoteFollowups[app.id] || '' };
+          const interviewDate = remoteInterviewDates[app.id] || '';
           const statusControl = current === 'OA Received'
             ? `<div class="status-cell" style="width:375px;min-width:375px;max-width:375px"><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /><div class="oa-followup">${isOwner() ? `<input class="followup-note" data-id="${app.id}" type="text" value="${escapeHtml(followupLabel(followup))}" placeholder="Done or Due 06/09" aria-label="OA follow-up for ${escapeHtml(app.company)}" />` : `<span class="followup-readonly">${escapeHtml(followupLabel(followup)) || 'Pending'}</span>`}</div></div>`
+            : current === 'Interview Received'
+              ? `<div class="status-cell" style="width:375px;min-width:375px;max-width:375px"><input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} /><div class="oa-followup interview-followup">${isOwner() ? `<input class="interview-date" data-id="${app.id}" type="text" inputmode="numeric" maxlength="5" value="${escapeHtml(interviewDate)}" placeholder="MM/DD" aria-label="Interview date for ${escapeHtml(app.company)}" />` : `<span class="followup-readonly">${escapeHtml(interviewDate) || 'Pending'}</span>`}</div></div>`
             : `<input class="status-editor ${classFor(current)}" data-id="${app.id}" value="${escapeHtml(current)}" list="status-options" aria-label="Current status for ${escapeHtml(app.company)}" ${isOwner() ? '' : 'disabled'} />`;
           return `<tr><td class="date">${app.date}</td><td class="company">${escapeHtml(app.company)}</td><td class="role">${escapeHtml(app.role)}</td><td>${statusControl}</td><td>${posting}</td><td>${resume}</td><td>${coverLetter}</td></tr>`;
         }).join('');
@@ -276,6 +295,15 @@
         }));
         rows.querySelectorAll('.followup-note').forEach(input => input.addEventListener('change', event => {
           saveFollowup(event.target.dataset.id, { note: event.target.value.trim() });
+        }));
+        rows.querySelectorAll('.interview-date').forEach(input => input.addEventListener('change', event => {
+          const date = event.target.value.trim();
+          if (date && !isValidMonthDay(date)) {
+            event.target.value = remoteInterviewDates[event.target.dataset.id] || '';
+            saveNote.innerHTML = 'Use a valid <strong>MM/DD</strong> interview date, such as 10/01.';
+            return;
+          }
+          saveInterviewDate(event.target.dataset.id, date);
         }));
         rows.querySelectorAll('.upload-missing').forEach(button => {
           const fileInput = rows.querySelector(`.document-upload[data-id="${button.dataset.id}"][data-kind="${button.dataset.kind}"]`);
@@ -307,6 +335,14 @@
             if (parsed) {
               remoteFollowups[parsed.applicationId] = parsed.note;
               remoteFollowupKeys[parsed.applicationId] = item.application_id;
+            }
+            return;
+          }
+          if (item.application_id.startsWith(INTERVIEW_DATE_PREFIX)) {
+            const parsed = parseInterviewDateKey(item.application_id);
+            if (parsed) {
+              remoteInterviewDates[parsed.applicationId] = parsed.value;
+              remoteInterviewDateKeys[parsed.applicationId] = item.application_id;
             }
             return;
           }
@@ -364,6 +400,24 @@
           render();
         } catch (_) {
           saveNote.innerHTML = 'Could not save the OA follow-up. Please <strong>sign in again</strong>.';
+        }
+      };
+      const saveInterviewDate = async (applicationId, date) => {
+        saveNote.innerHTML = 'Saving <strong>interview date</strong>…';
+        const previousKey = remoteInterviewDateKeys[applicationId];
+        const nextKey = interviewDateKey(applicationId, date);
+        try {
+          const request = previousKey
+            ? supabaseClient.from('application_statuses').update({ application_id: nextKey, status: 'Interview Received' }).eq('application_id', previousKey)
+            : supabaseClient.from('application_statuses').insert({ application_id: nextKey, status: 'Interview Received' });
+          const { error } = await request;
+          if (error) throw error;
+          remoteInterviewDates[applicationId] = date;
+          remoteInterviewDateKeys[applicationId] = nextKey;
+          saveNote.innerHTML = 'Interview date saved <strong>in the database</strong>.';
+          render();
+        } catch (_) {
+          saveNote.innerHTML = 'Could not save the interview date. Please <strong>sign in again</strong>.';
         }
       };
       const uploadMissingDocument = async (applicationId, kind, file) => {

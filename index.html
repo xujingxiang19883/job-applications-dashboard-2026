@@ -130,6 +130,8 @@
       <footer class="footer"><span>Default statuses reflect the latest verified record.</span><span>Last compiled: 2026-09-24</span></footer>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Keeps the public dashboard readable when a visitor cannot reach Supabase. -->
+    <script src="data/public-dashboard-snapshot.js"></script>
     <script>
       const defaultApplications = [
         {id:'millennium-qr',date:'2026-08-29',company:'Millennium Management',role:'2027 Quantitative Researcher Intern, New York',status:'Rejected',url:'https://campusjobs.mlp.com/careers/job/755957778843-2027-quantitative-researcher-intern-new-york-new-york-new-york-united-states-of-america?domain=mlp.com',resume:null},
@@ -167,6 +169,7 @@
       const remoteInterviewDates = {};
       const remoteInterviewDateKeys = {};
       const remoteDocuments = {};
+      const publicSnapshot = window.PUBLIC_DASHBOARD_SNAPSHOT || null;
       const FOLLOWUP_PREFIX = '__oa_followup__:';
       const INTERVIEW_DATE_PREFIX = '__interview_date__:';
       const customApplications = [];
@@ -350,6 +353,25 @@
         });
         render(); updateMetrics();
       };
+      const hydrateStatuses = data => data.forEach(item => {
+        if (item.application_id.startsWith(FOLLOWUP_PREFIX)) {
+          const parsed = parseFollowupKey(item.application_id);
+          if (parsed) {
+            remoteFollowups[parsed.applicationId] = parsed.note;
+            remoteFollowupKeys[parsed.applicationId] = item.application_id;
+          }
+          return;
+        }
+        if (item.application_id.startsWith(INTERVIEW_DATE_PREFIX)) {
+          const parsed = parseInterviewDateKey(item.application_id);
+          if (parsed) {
+            remoteInterviewDates[parsed.applicationId] = parsed.value;
+            remoteInterviewDateKeys[parsed.applicationId] = item.application_id;
+          }
+          return;
+        }
+        remoteStatuses[item.application_id] = item.status;
+      });
       const loadDocuments = async () => {
         const { data, error } = await supabaseClient
           .from('application_documents')
@@ -364,6 +386,10 @@
         });
         render();
       };
+      const hydrateDocuments = data => data.forEach(item => {
+        remoteDocuments[item.application_id] ||= {};
+        remoteDocuments[item.application_id][item.document_type] = item.storage_path;
+      });
       const publicResumeUrl = path => path ? supabaseClient.storage.from('dashboard-resumes').getPublicUrl(path).data.publicUrl : null;
       const loadDashboardMetadata = async () => {
         const { data, error } = await supabaseClient.storage.from('dashboard-resumes').download(metadataPath);
@@ -467,6 +493,28 @@
           };
         }));
         render(); updateMetrics();
+      };
+      const hydrateCustomApplications = data => {
+        customApplications.splice(0, customApplications.length, ...data.map(item => {
+          const market = item.company.startsWith(HK_PREFIX) ? 'HK' : 'US';
+          return {
+            id: `custom-${item.id}`,
+            date: item.submitted_date,
+            company: market === 'HK' ? item.company.slice(HK_PREFIX.length) : item.company,
+            role: item.role,
+            url: item.application_url,
+            resumeUrl: publicResumeUrl(item.resume_path),
+            status: item.status,
+            market
+          };
+        }));
+      };
+      const loadPublicSnapshot = () => {
+        if (!publicSnapshot) return false;
+        hydrateStatuses(publicSnapshot.statuses || []);
+        hydrateDocuments(publicSnapshot.documents || []);
+        hydrateCustomApplications(publicSnapshot.customApplications || []);
+        return true;
       };
       const saveStatus = async (applicationId, status) => {
         saveNote.innerHTML = 'Saving <strong>permanently</strong>…';
@@ -614,6 +662,11 @@
         session = initialSession;
         updateAuthUi();
         updateMarketUi();
+        // Render the published snapshot before attempting live reads. Visitors on
+        // networks that block Supabase therefore still see the full dashboard.
+        loadPublicSnapshot();
+        render();
+        updateMetrics();
         await Promise.all([loadStatuses(), loadDocuments(), loadCustomApplications(), loadDashboardMetadata()]);
         render();
         updateMetrics();

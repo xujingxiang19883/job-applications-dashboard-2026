@@ -127,9 +127,9 @@
           <datalist id="status-options"><option value="Rejected"></option><option value="OA Received"></option><option value="Application Submitted"></option><option value="Interview Received"></option></datalist>
         </div>
       </section>
-      <footer class="footer"><span>Default statuses reflect the latest verified record.</span><span>Last compiled: 2026-09-24</span></footer>
+      <footer class="footer"><span>Default statuses reflect the latest verified record.</span><span>Public snapshot refreshes hourly.</span></footer>
     </main>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="vendor/supabase-2.118.0.umd.js"></script>
     <!-- Keeps the public dashboard readable when a visitor cannot reach Supabase. -->
     <script src="data/public-dashboard-snapshot.js"></script>
     <script>
@@ -658,13 +658,16 @@
         updateAuthUi(); render();
       });
       (async () => {
+        updateMarketUi();
+        // Public data must render before waiting for auth or any Supabase request.
+        // Those services may be unavailable on a visitor's network.
+        loadPublicSnapshot();
+        render();
+        updateMetrics();
+        updateAuthUi();
         const { data: { session: initialSession } } = await supabaseClient.auth.getSession();
         session = initialSession;
         updateAuthUi();
-        updateMarketUi();
-        // Render the published snapshot before attempting live reads. Visitors on
-        // networks that block Supabase therefore still see the full dashboard.
-        loadPublicSnapshot();
         render();
         updateMetrics();
         await Promise.all([loadStatuses(), loadDocuments(), loadCustomApplications(), loadDashboardMetadata()]);

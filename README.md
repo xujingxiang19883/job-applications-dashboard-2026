@@ -1,10 +1,12 @@
 # 2026 Job Application Dashboard
 
-This repository publishes a compact tracker of verified job applications and employer-status records from 2026-08-24 through 2026-09-24.
+This repository publishes a tracker of verified 2026 job applications and employer-status records.
 
 Open the interactive dashboard through GitHub Pages: `https://xujingxiang19883.github.io/job-applications-dashboard-2026/`
 
-The dashboard is sorted by submitted date. Its Current status menus are editable in the browser and save only to that browser's local storage; the published default records remain unchanged. Each row links to the original application/JD page and, where retained, the role-specific resume PDF in this repository. This repository publishes the HTML dashboard only; it does not maintain a downloadable Excel tracker.
+The page loads its Supabase JavaScript library from this repository and renders a published, read-only snapshot before checking authentication or fetching live data. This lets visitors read the dashboard on networks that cannot reach Supabase. When Supabase is available, the page refreshes with current records and the Cornell owner can edit as usual. GitHub Actions refreshes the public snapshot hourly; visitors on restricted networks may see changes with up to roughly an hour of delay, plus GitHub Pages deployment and caching time. The snapshot contains only records already exposed by the dashboard's public API.
+
+The dashboard is sorted by submitted date. The Cornell owner can sign in to edit statuses and add applications; changes are saved in Supabase. Each row links to the original application/JD page and, where retained, the role-specific resume PDF. This repository does not maintain a downloadable Excel tracker.
 
 Notes:
 
